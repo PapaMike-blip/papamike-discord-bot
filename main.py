@@ -31,10 +31,10 @@ CONFIG = {
         "giftcode_updates": 1439869895444795402,
         "giftcode_log": 1439870315093032981,
 
-        # These you can update when you have the IDs:
-        "welcome_channel": 0,                 # optional: 👋｜welcome
-        "verify_channel": 1439783924539723868,  # 🛂｜verify-here
-        "verification_form_channel": 0        # optional extra if you make one
+        # 👇 IMPORTANT: verify-here and welcome channel
+        "welcome_channel": 0,                  # if you later make a separate welcome text channel, put its ID here
+        "verify_channel": 1439783924539723868, # ✅ your #verify-here channel
+        "verification_form_channel": 0         # not used right now
     },
 
     "alliance_channels": {
@@ -85,7 +85,7 @@ CONFIG = {
 
         "vvv": 1439844354486304871,
         "vvv_r4": 1439844215323492422,
-        "vvv_r5": None,  # fill this if you create it
+        "vvv_r5": None,  # add later if you make it
 
         "eua": 1439847035577827328,
         "eua_r4": 1439846932028588102,
@@ -210,7 +210,6 @@ class Translator:
                 self.cache[key] = translated
                 return translated
         except Exception:
-            # If translation fails, just return original text
             return text
 
 
@@ -218,21 +217,18 @@ translator = Translator()
 
 # ------------- BOT SETUP -------------
 
-# Use all intents so joins, members, and slash commands work correctly
-intents = discord.Intents.all()
+intents = discord.Intents.all()  # ✅ give us all events (members, presences, etc.)
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 player_ids: Dict[str, str] = {}
 last_seen: Dict[str, str] = {}
 participation: Dict[str, int] = {}
 
-guess_games: Dict[int, int] = {}  # user_id -> secret number
-blackjack_games: Dict[int, Dict[str, Any]] = {}  # simple game state
+guess_games: Dict[int, int] = {}
+blackjack_games: Dict[int, Dict[str, Any]] = {}
 
 
 async def log_to(channel_id: int, message: str):
-    if not channel_id:
-        return
     channel = bot.get_channel(channel_id)
     if channel:
         try:
@@ -259,26 +255,22 @@ def get_alliance_name_from_roles(member: discord.Member) -> Optional[str]:
 
 def furnace_level_from_text(text: str) -> Optional[str]:
     text = text.upper()
-    # Try F<number>
     m = re.search(r"\bF(\d{1,2})\b", text)
     if m:
         n = int(m.group(1))
         if 1 <= n <= 30:
             return f"F{n}"
-    # Try FC<number>
     m = re.search(r"\bFC(\d{1,2})\b", text)
     if m:
         n = int(m.group(1))
         if 1 <= n <= 10:
             return f"FC{n}"
-    # Try "Furnace 12" style
     m = re.search(r"FURNACE\s*(\d{1,2})", text)
     if m:
         n = int(m.group(1))
         if 1 <= n <= 30:
             return f"F{n}"
     return None
-
 
 # ------------- VERIFICATION UI (BUTTON + MODAL) -------------
 
@@ -321,154 +313,150 @@ class VerificationModal(discord.ui.Modal, title="PapaMike Server Application"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        try:
-            member = interaction.user
-            guild = interaction.guild
+        member = interaction.user
+        guild = interaction.guild
 
-            # Save player ID
-            pid = self.player_id.value.strip()
-            player_ids[str(member.id)] = pid
-            save_json(PLAYER_IDS_FILE, player_ids)
+        # Save player ID
+        pid = self.player_id.value.strip()
+        player_ids[str(member.id)] = pid
+        save_json(PLAYER_IDS_FILE, player_ids)
 
-            # Alliance role
-            alliance_input = self.alliance.value.strip().upper()
-            alliance_key = CONFIG["alliance_name_to_role_key"].get(alliance_input)
-            alliance_role = None
-            if alliance_key:
-                rid = CONFIG["roles"].get(alliance_key)
-                if rid:
-                    alliance_role = guild.get_role(rid)
+        # Alliance role
+        alliance_input = self.alliance.value.strip().upper()
+        alliance_key = CONFIG["alliance_name_to_role_key"].get(alliance_input)
+        alliance_role = None
+        if alliance_key:
+            rid = CONFIG["roles"].get(alliance_key)
+            if rid:
+                alliance_role = guild.get_role(rid)
 
-            # Rank (just logged for now)
-            rank = self.rank.value.strip().upper()
+        rank = self.rank.value.strip().upper()
 
-            # Language role
-            lang_input = self.main_language.value.strip().lower()
-            target_role = None
-            language_name_to_id = {
-                "english": 1439732594693509131,
-                "polish": 1439733053550497915,
-                "french": 1439733487195394148,
-                "bosnian": 1439733731534311604,
-                "portuguese (brazil)": 1439734067955499160,
-                "portuguese (portugal)": 1439734590632759336,
-                "persian": 1439734720610177198,
-                "arabic": 1439735048554418227,
-                "german": 1439735171061645507,
-                "russian": 1439737062575181966,
-                "korean": 1439737330263916696,
-                "thai": 1439737843445530644,
-                "turkish": 1439737886348939294,
-                "chinese": 1439737951138353202,
-                "spanish": 1439884540331167775,
-            }
+        # Language role
+        lang_input = self.main_language.value.strip().lower()
+        target_role = None
+        language_name_to_id = {
+            "english": 1439732594693509131,
+            "polish": 1439733053550497915,
+            "french": 1439733487195394148,
+            "bosnian": 1439733731534311604,
+            "portuguese (brazil)": 1439734067955499160,
+            "portuguese (portugal)": 1439734590632759336,
+            "persian": 1439734720610177198,
+            "arabic": 1439735048554418227,
+            "german": 1439735171061645507,
+            "russian": 1439737062575181966,
+            "korean": 1439737330263916696,
+            "thai": 1439737843445530644,
+            "turkish": 1439737886348939294,
+            "chinese": 1439737951138353202,
+            "spanish": 1439884540331167775,
+        }
 
-            for name, rid in language_name_to_id.items():
-                if lang_input == name or lang_input.startswith(name.split()[0]):
-                    target_role = guild.get_role(rid)
-                    break
+        for name, rid in language_name_to_id.items():
+            if lang_input == name or lang_input.startswith(name.split()[0]):
+                target_role = guild.get_role(rid)
+                break
 
-            # Age roles
-            age_val = self.age_group.value.strip().lower()
-            if "under" in age_val:
-                age_role_id = CONFIG["roles"]["age_under19"]
-            else:
-                age_role_id = CONFIG["roles"]["age_19plus"]
-            age_role = guild.get_role(age_role_id) if age_role_id else None
+        # Age roles
+        age_val = self.age_group.value.strip().lower()
+        if "under" in age_val:
+            age_role_id = CONFIG["roles"]["age_under19"]
+        else:
+            age_role_id = CONFIG["roles"]["age_19plus"]
+        age_role = guild.get_role(age_role_id)
 
-            # Apply roles
-            to_add = []
-            if alliance_role:
-                to_add.append(alliance_role)
-            if target_role:
-                to_add.append(target_role)
-            if age_role:
-                to_add.append(age_role)
+        # Apply roles
+        to_add = []
+        if alliance_role:
+            to_add.append(alliance_role)
+        if target_role:
+            to_add.append(target_role)
+        if age_role:
+            to_add.append(age_role)
 
-            if to_add:
-                try:
-                    await member.add_roles(*to_add, reason="Verified via application form")
-                except Exception:
-                    pass
-
-            # Remove Pending Verification
-            pending_role_id = CONFIG["roles"]["pending"]
-            pending_role = guild.get_role(pending_role_id)
-            if pending_role in member.roles:
-                try:
-                    await member.remove_roles(pending_role, reason="Verification complete")
-                except Exception:
-                    pass
-
-            # Log application
-            review_channel = guild.get_channel(CONFIG["channels"]["review_inbox"])
-            app_log_channel = guild.get_channel(CONFIG["channels"]["application_log"])
-
-            embed = discord.Embed(
-                title="New Application",
-                color=discord.Color.blurple(),
-                timestamp=datetime.datetime.utcnow(),
-            )
-            embed.add_field(name="User", value=f"{member} ({member.mention})", inline=False)
-            embed.add_field(name="Server", value=self.server_number.value, inline=True)
-            embed.add_field(name="Player ID", value=self.player_id.value, inline=True)
-            embed.add_field(name="Alliance", value=self.alliance.value, inline=True)
-            embed.add_field(name="Rank", value=rank, inline=True)
-            embed.add_field(name="Language", value=self.main_language.value, inline=True)
-            embed.add_field(name="Age Group", value=self.age_group.value, inline=True)
-
-            if review_channel:
-                await review_channel.send(embed=embed)
-            if app_log_channel:
-                await app_log_channel.send(embed=embed)
-
-            # Welcome message after approval
-            welcome_channel_id = CONFIG["channels"].get("welcome_channel") or 0
-            if welcome_channel_id:
-                wc = guild.get_channel(welcome_channel_id)
-                if wc:
-                    await wc.send(
-                        f"Welcome {member.mention}! ✅ Your application has been recorded.\n"
-                        f"Alliance: **{self.alliance.value}**, Rank: **{rank}**, Server: **{self.server_number.value}**."
-                    )
-
-            await interaction.response.send_message(
-                "Thank you! ✅ Your application has been submitted and your roles have been updated.",
-                ephemeral=True,
-            )
-        except Exception as e:
-            await log_to(CONFIG["channels"]["bot_errors"], f"Error in VerificationModal.on_submit: `{e}`")
+        if to_add:
             try:
-                await interaction.response.send_message(
-                    "⚠️ Something went wrong while processing your application. Please contact an admin.",
-                    ephemeral=True,
-                )
-            except Exception:
-                pass
+                await member.add_roles(*to_add, reason="Verified via application form")
+            except Exception as e:
+                print(f"Error adding roles during verification: {e}")
 
+        # Remove Pending Verification
+        pending_role_id = CONFIG["roles"]["pending"]
+        pending_role = guild.get_role(pending_role_id)
+        if pending_role in member.roles:
+            try:
+                await member.remove_roles(pending_role, reason="Verification complete")
+            except Exception as e:
+                print(f"Error removing pending role: {e}")
+
+        # Log application
+        review_channel = guild.get_channel(CONFIG["channels"]["review_inbox"])
+        app_log_channel = guild.get_channel(CONFIG["channels"]["application_log"])
+
+        embed = discord.Embed(
+            title="New Application",
+            color=discord.Color.blurple(),
+            timestamp=datetime.datetime.utcnow(),
+        )
+        embed.add_field(name="User", value=f"{member} ({member.mention})", inline=False)
+        embed.add_field(name="Server", value=self.server_number.value, inline=True)
+        embed.add_field(name="Player ID", value=self.player_id.value, inline=True)
+        embed.add_field(name="Alliance", value=self.alliance.value, inline=True)
+        embed.add_field(name="Rank", value=rank, inline=True)
+        embed.add_field(name="Language", value=self.main_language.value, inline=True)
+        embed.add_field(name="Age Group", value=self.age_group.value, inline=True)
+
+        if review_channel:
+            await review_channel.send(embed=embed)
+        if app_log_channel:
+            await app_log_channel.send(embed=embed)
+
+        # Welcome message
+        welcome_channel_id = CONFIG["channels"].get("welcome_channel") or 0
+        if welcome_channel_id:
+            wc = guild.get_channel(welcome_channel_id)
+            if wc:
+                await wc.send(
+                    f"Welcome {member.mention}! ✅ Your application has been recorded.\n"
+                    f"Alliance: **{self.alliance.value}**, Rank: **{rank}**, Server: **{self.server_number.value}**."
+                )
+
+        await interaction.response.send_message(
+            "Thank you! ✅ Your application has been submitted and your roles have been updated.",
+            ephemeral=True,
+        )
 
 class VerifyView(discord.ui.View):
-    """Persistent view with a button to open the verification modal."""
-
+    """Persistent view with a button to start the verification modal."""
     def __init__(self):
         super().__init__(timeout=None)
 
     @discord.ui.button(
-        label="Start Verification ✅",
+        label="Start Verification",
         style=discord.ButtonStyle.primary,
-        custom_id="papamike_verify_button"
+        custom_id="papamike:verify_button"
     )
-    async def verify_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def start_verify(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+        print(f"Verify button clicked by {interaction.user} ({interaction.user.id})")
         try:
             await interaction.response.send_modal(VerificationModal())
         except Exception as e:
-            await log_to(CONFIG["channels"]["bot_errors"], f"Error opening VerificationModal: `{e}`")
+            print(f"Error opening verification modal: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message(
-                    "⚠️ Could not open the verification form. Please try again or contact an admin.",
+                    "⚠ Could not open the verification form. Please try again or contact an admin.",
                     ephemeral=True,
                 )
-
+            else:
+                await interaction.followup.send(
+                    "⚠ Could not open the verification form. Please try again or contact an admin.",
+                    ephemeral=True,
+                )
 
 # ------------- EVENTS -------------
 
@@ -480,7 +468,7 @@ async def on_ready():
     last_seen = load_json(LAST_SEEN_FILE)
     participation = load_json(PARTICIPATION_FILE)
 
-    # Register persistent view for button so old messages still work after restart
+    # persistent view for verification button
     bot.add_view(VerifyView())
 
     try:
@@ -488,7 +476,6 @@ async def on_ready():
         print(f"Synced {len(synced)} application commands.")
     except Exception as e:
         print(f"Error syncing commands: {e}")
-        await log_to(CONFIG["channels"]["bot_errors"], f"Error syncing slash commands: `{e}`")
 
     if not utc_arena_reminder.is_running():
         utc_arena_reminder.start()
@@ -496,7 +483,6 @@ async def on_ready():
         inactivity_check.start()
 
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
-
 
 @bot.event
 async def on_member_join(member: discord.Member):
@@ -506,8 +492,8 @@ async def on_member_join(member: discord.Member):
     if pending_role:
         try:
             await member.add_roles(pending_role, reason="New member pending verification")
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error adding pending role: {e}")
 
     # Log join
     await log_to(
@@ -515,40 +501,23 @@ async def on_member_join(member: discord.Member):
         f"➡️ {member.mention} joined the server. Assigned **Pending Verification**."
     )
 
-    # Send auto verification message in verify-here channel
+    # Send verification button in verify channel
     verify_channel_id = CONFIG["channels"].get("verify_channel") or 0
     if verify_channel_id:
         ch = member.guild.get_channel(verify_channel_id)
         if ch:
             try:
                 await ch.send(
-                    content=(
-                        f"Welcome {member.mention}! 👋\n"
-                        "Click the button below to start your verification.\n\n"
-                        "**You must complete this to see the rest of the server.**"
-                    ),
+                    f"Welcome {member.mention}! 👋\n"
+                    f"Click the button below to start your verification.\n"
+                    f"You **must complete this** to see the rest of the server.",
                     view=VerifyView(),
                 )
             except Exception as e:
-                await log_to(CONFIG["channels"]["bot_errors"], f"Error sending verify message: `{e}`")
-
-    # Optional welcome channel
-    welcome_channel_id = CONFIG["channels"].get("welcome_channel") or 0
-    if welcome_channel_id:
-        wc = member.guild.get_channel(welcome_channel_id)
-        if wc:
-            try:
-                await wc.send(
-                    f"Welcome {member.mention}! 🎉\n"
-                    "Please go to the verification channel and click **Start Verification ✅** to unlock the server."
-                )
-            except Exception:
-                pass
-
+                print(f"Error sending verify message: {e}")
 
 @bot.event
 async def on_member_remove(member: discord.Member):
-    # Remove their player ID
     uid = str(member.id)
     if uid in player_ids:
         removed_id = player_ids.pop(uid)
@@ -562,7 +531,6 @@ async def on_member_remove(member: discord.Member):
         CONFIG["channels"]["join_leave_log"],
         f"⬅️ {member} left the server."
     )
-
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -594,9 +562,7 @@ async def on_message(message: discord.Message):
                 f"🔥 Congrats {message.author.mention} on reaching **{lvl}**!"
             )
 
-    # Giftcodes – future expansion (for now handled by commands)
-
-    # Auto-translate logs for alliance + global chat
+    # Auto-translate logging
     try:
         important_channels = {CONFIG["channels"]["server_chat"]}
         for data in CONFIG["alliance_channels"].values():
@@ -613,10 +579,9 @@ async def on_message(message: discord.Message):
                         f"🌐 {message.author} in <#{message.channel.id}> (lang {lang}) → EN: {translated}"
                     )
     except Exception as e:
-        await log_to(CONFIG["channels"]["bot_errors"], f"Error in auto-translate: `{e}`")
+        print(f"Error in auto-translate section: {e}")
 
     await bot.process_commands(message)
-
 
 # ------------- TASKS -------------
 
@@ -630,19 +595,16 @@ async def utc_arena_reminder():
         except Exception:
             pass
 
-
 @tasks.loop(hours=24)
 async def inactivity_check():
     await bot.wait_until_ready()
     now = datetime.datetime.utcnow()
     threshold = datetime.timedelta(days=30)
-    guilds: List[discord.Guild] = bot.guilds
 
-    for guild in guilds:
+    for guild in bot.guilds:
         for member in guild.members:
             if member.bot:
                 continue
-            # Skip admins/moderators
             admin_role_id = CONFIG["roles"]["admin"]
             mod_role_id = CONFIG["roles"]["moderator"]
             if any(r.id in (admin_role_id, mod_role_id) for r in member.roles):
@@ -651,7 +613,6 @@ async def inactivity_check():
             uid = str(member.id)
             last = last_seen.get(uid)
             if not last:
-                # If we've never seen them, start tracking now
                 last_seen[uid] = now.isoformat()
                 continue
             try:
@@ -660,7 +621,6 @@ async def inactivity_check():
                 last_dt = now
 
             if now - last_dt > threshold:
-                # Kick for inactivity
                 try:
                     await member.kick(reason="Inactive for 30 days")
                     await log_to(
@@ -672,31 +632,30 @@ async def inactivity_check():
 
     save_json(LAST_SEEN_FILE, last_seen)
 
+# ------------- SLASH COMMANDS -------------
 
-# ------------- SLASH COMMANDS (INCLUDING /verify AS BACKUP) -------------
-
-@bot.tree.command(name="verify", description="Open the PapaMike verification form (backup command).")
+@bot.tree.command(name="verify", description="Start the PapaMike verification form.")
 async def verify_cmd(interaction: discord.Interaction):
-    """User runs /verify to open the application modal."""
+    """Backup: user runs /verify to open the application modal."""
+    print(f"/verify used by {interaction.user} ({interaction.user.id})")
     try:
         await interaction.response.send_modal(VerificationModal())
     except Exception as e:
-        await log_to(CONFIG["channels"]["bot_errors"], f"Error in /verify: `{e}`")
+        print(f"Error opening verification modal from /verify: {e}")
         if not interaction.response.is_done():
             await interaction.response.send_message(
-                "⚠️ Could not open the verification form. Please try again.",
+                "⚠ Could not open the verification form. Please try again or contact an admin.",
+                ephemeral=True,
+            )
+        else:
+            await interaction.followup.send(
+                "⚠ Could not open the verification form. Please try again or contact an admin.",
                 ephemeral=True,
             )
 
-
-# ------------- GIFT CODES -------------
+# Gift codes
 
 async def apply_gift_code_to_all_players(code: str, guild: discord.Guild):
-    """
-    STUB: This is where you'd implement actual calls to
-    https://wos-giftcode.centurygame.com/
-    We don't have an official API spec, so this function currently just logs.
-    """
     count = len(player_ids)
     await log_to(
         CONFIG["channels"]["giftcode_updates"],
@@ -707,17 +666,14 @@ async def apply_gift_code_to_all_players(code: str, guild: discord.Guild):
         f"Gift code `{code}` processing stubbed. You need to implement real HTTP calls if possible."
     )
 
-
 @bot.tree.command(name="addcode", description="Add a new Whiteout Survival gift code.")
 @app_commands.describe(code="The gift code text")
 async def addcode_cmd(interaction: discord.Interaction, code: str):
     if not interaction.user.guild_permissions.manage_guild:
         await interaction.response.send_message("You don't have permission to add codes.", ephemeral=True)
         return
-
     await interaction.response.send_message(f"Gift code `{code}` received. Processing...", ephemeral=True)
     await apply_gift_code_to_all_players(code, interaction.guild)
-
 
 @bot.tree.command(name="addplayerid", description="Register your Whiteout Survival player ID.")
 @app_commands.describe(player_id="Your Whiteout Survival player ID")
@@ -729,8 +685,7 @@ async def addplayerid_cmd(interaction: discord.Interaction, player_id: str):
         ephemeral=True,
     )
 
-
-# ------------- GAMES -------------
+# Games
 
 @bot.tree.command(name="guessnumber", description="Play a guess-the-number game (1-100).")
 async def guessnumber_cmd(interaction: discord.Interaction):
@@ -741,7 +696,6 @@ async def guessnumber_cmd(interaction: discord.Interaction):
         "I've picked a number between 1 and 100. Use `/guess <number>` to try!",
         ephemeral=True,
     )
-
 
 @bot.tree.command(name="guess", description="Guess the number for the current game.")
 @app_commands.describe(number="Your guess between 1 and 100")
@@ -757,7 +711,6 @@ async def guess_cmd(interaction: discord.Interaction, number: int):
     else:
         await interaction.response.send_message("🎉 Correct! You guessed the number!", ephemeral=True)
         del guess_games[interaction.user.id]
-
 
 @bot.tree.command(name="blackjack", description="Play a simple Blackjack game vs the dealer.")
 async def blackjack_cmd(interaction: discord.Interaction):
@@ -789,28 +742,27 @@ async def blackjack_cmd(interaction: discord.Interaction):
     p_val = hand_value(player)
     d_val = hand_value(dealer)
 
-    result_lines = [
+    lines = [
         f"Your hand: {', '.join(player)} (total {p_val})",
         f"Dealer hand: {', '.join(dealer)} (total {d_val})",
     ]
 
     if p_val > 21 and d_val > 21:
-        result_lines.append("Both busted. It's a draw.")
+        lines.append("Both busted. It's a draw.")
     elif p_val > 21:
-        result_lines.append("You busted. Dealer wins.")
+        lines.append("You busted. Dealer wins.")
     elif d_val > 21:
-        result_lines.append("Dealer busted. You win! 🎉")
+        lines.append("Dealer busted. You win! 🎉")
     elif p_val > d_val:
-        result_lines.append("You win! 🎉")
+        lines.append("You win! 🎉")
     elif p_val < d_val:
-        result_lines.append("Dealer wins.")
+        lines.append("Dealer wins.")
     else:
-        result_lines.append("It's a tie.")
+        lines.append("It's a tie.")
 
-    await interaction.response.send_message("\n".join(result_lines), ephemeral=True)
+    await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
-
-# ------------- TRANSLATION COMMAND -------------
+# Translate + help
 
 @bot.tree.command(name="translate", description="Translate text into your language.")
 @app_commands.describe(text="The text you want translated")
@@ -822,16 +774,12 @@ async def translate_cmd(interaction: discord.Interaction, text: str):
         ephemeral=True,
     )
 
-
-# ------------- HELP -------------
-
 @bot.tree.command(name="help_papamike", description="Show help for PapaMike Translator bot.")
 async def help_cmd(interaction: discord.Interaction):
     desc = (
         "**PapaMike Translator Bot – Help**\n\n"
         "🛂 **Verification & Roles**\n"
-        "- Click the **Start Verification ✅** button in the verify channel to open the form.\n"
-        "- `/verify` – backup command to open the verification form.\n"
+        "- Click the **Start Verification** button in #verify, or use `/verify`.\n"
         "- Alliance, language and age roles are auto-assigned from your answers.\n\n"
         "🌐 **Translation**\n"
         "- Auto-logs translations of global and alliance chats into English for leaders.\n"
@@ -850,22 +798,6 @@ async def help_cmd(interaction: discord.Interaction):
     )
     await interaction.response.send_message(desc, ephemeral=True)
 
-
-# ------------- GLOBAL ERROR HANDLING -------------
-
-@bot.tree.error
-async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    await log_to(CONFIG["channels"]["bot_errors"], f"Slash command error: `{error}`")
-    if not interaction.response.is_done():
-        try:
-            await interaction.response.send_message(
-                "⚠️ An error occurred while running that command. Please contact an admin.",
-                ephemeral=True,
-            )
-        except Exception:
-            pass
-
-
 # ------------- RUN -------------
 
 async def main():
@@ -879,7 +811,6 @@ async def main():
             await bot.start(token)
         finally:
             await translator.close()
-
 
 if __name__ == "__main__":
     ensure_data_files()
