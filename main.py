@@ -31,11 +31,10 @@ CONFIG = {
         "giftcode_updates": 1439869895444795402,
         "giftcode_log": 1439870315093032981,
 
-        # These you must fill by ID (right-click → Copy ID)
-        # Put the IDs here once you have them:
-        "welcome_channel": 0,          # 👋｜welcome
-        "verify_channel": 0,           # 🛂｜verify-here (if you want to ping here)
-        "verification_form_channel": 0 # 📝｜verification-form (in 🛂 Verification)
+        # These you can update when you have the IDs:
+        "welcome_channel": 0,                 # optional: 👋｜welcome
+        "verify_channel": 1439783924539723868,  # 🛂｜verify-here
+        "verification_form_channel": 0        # optional extra if you make one
     },
 
     "alliance_channels": {
@@ -86,8 +85,7 @@ CONFIG = {
 
         "vvv": 1439844354486304871,
         "vvv_r4": 1439844215323492422,
-        # vVv R5 ID was not provided – add it here if you create it:
-        "vvv_r5": None,
+        "vvv_r5": None,  # fill this if you create it
 
         "eua": 1439847035577827328,
         "eua_r4": 1439846932028588102,
@@ -218,14 +216,10 @@ class Translator:
 
 translator = Translator()
 
-
 # ------------- BOT SETUP -------------
 
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
-intents.guilds = True
-
+# Use all intents so joins, members, and slash commands work correctly
+intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 player_ids: Dict[str, str] = {}
@@ -237,6 +231,8 @@ blackjack_games: Dict[int, Dict[str, Any]] = {}  # simple game state
 
 
 async def log_to(channel_id: int, message: str):
+    if not channel_id:
+        return
     channel = bot.get_channel(channel_id)
     if channel:
         try:
@@ -284,6 +280,196 @@ def furnace_level_from_text(text: str) -> Optional[str]:
     return None
 
 
+# ------------- VERIFICATION UI (BUTTON + MODAL) -------------
+
+class VerificationModal(discord.ui.Modal, title="PapaMike Server Application"):
+    server_number = discord.ui.TextInput(
+        label="What WOS server are you on?",
+        placeholder="Example: 123",
+        required=True,
+        max_length=10,
+    )
+    player_id = discord.ui.TextInput(
+        label="Your Whiteout Survival Player ID",
+        placeholder="Numbers only",
+        required=True,
+        max_length=30,
+    )
+    alliance = discord.ui.TextInput(
+        label="Alliance (BTK, SUN, vVv, EUA, FUN, WRS, TEA)",
+        placeholder="Type one exactly, e.g. BTK",
+        required=True,
+        max_length=10,
+    )
+    rank = discord.ui.TextInput(
+        label="Rank (R1, R2, R3, R4, R5)",
+        placeholder="R1 / R2 / R3 / R4 / R5",
+        required=True,
+        max_length=5,
+    )
+    main_language = discord.ui.TextInput(
+        label="Main language (English, French, etc.)",
+        placeholder="English / French / Portuguese / ...",
+        required=True,
+        max_length=30,
+    )
+    age_group = discord.ui.TextInput(
+        label="Age group (under 19 or 19+)",
+        placeholder="under 19 or 19+",
+        required=True,
+        max_length=10,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            member = interaction.user
+            guild = interaction.guild
+
+            # Save player ID
+            pid = self.player_id.value.strip()
+            player_ids[str(member.id)] = pid
+            save_json(PLAYER_IDS_FILE, player_ids)
+
+            # Alliance role
+            alliance_input = self.alliance.value.strip().upper()
+            alliance_key = CONFIG["alliance_name_to_role_key"].get(alliance_input)
+            alliance_role = None
+            if alliance_key:
+                rid = CONFIG["roles"].get(alliance_key)
+                if rid:
+                    alliance_role = guild.get_role(rid)
+
+            # Rank (just logged for now)
+            rank = self.rank.value.strip().upper()
+
+            # Language role
+            lang_input = self.main_language.value.strip().lower()
+            target_role = None
+            language_name_to_id = {
+                "english": 1439732594693509131,
+                "polish": 1439733053550497915,
+                "french": 1439733487195394148,
+                "bosnian": 1439733731534311604,
+                "portuguese (brazil)": 1439734067955499160,
+                "portuguese (portugal)": 1439734590632759336,
+                "persian": 1439734720610177198,
+                "arabic": 1439735048554418227,
+                "german": 1439735171061645507,
+                "russian": 1439737062575181966,
+                "korean": 1439737330263916696,
+                "thai": 1439737843445530644,
+                "turkish": 1439737886348939294,
+                "chinese": 1439737951138353202,
+                "spanish": 1439884540331167775,
+            }
+
+            for name, rid in language_name_to_id.items():
+                if lang_input == name or lang_input.startswith(name.split()[0]):
+                    target_role = guild.get_role(rid)
+                    break
+
+            # Age roles
+            age_val = self.age_group.value.strip().lower()
+            if "under" in age_val:
+                age_role_id = CONFIG["roles"]["age_under19"]
+            else:
+                age_role_id = CONFIG["roles"]["age_19plus"]
+            age_role = guild.get_role(age_role_id) if age_role_id else None
+
+            # Apply roles
+            to_add = []
+            if alliance_role:
+                to_add.append(alliance_role)
+            if target_role:
+                to_add.append(target_role)
+            if age_role:
+                to_add.append(age_role)
+
+            if to_add:
+                try:
+                    await member.add_roles(*to_add, reason="Verified via application form")
+                except Exception:
+                    pass
+
+            # Remove Pending Verification
+            pending_role_id = CONFIG["roles"]["pending"]
+            pending_role = guild.get_role(pending_role_id)
+            if pending_role in member.roles:
+                try:
+                    await member.remove_roles(pending_role, reason="Verification complete")
+                except Exception:
+                    pass
+
+            # Log application
+            review_channel = guild.get_channel(CONFIG["channels"]["review_inbox"])
+            app_log_channel = guild.get_channel(CONFIG["channels"]["application_log"])
+
+            embed = discord.Embed(
+                title="New Application",
+                color=discord.Color.blurple(),
+                timestamp=datetime.datetime.utcnow(),
+            )
+            embed.add_field(name="User", value=f"{member} ({member.mention})", inline=False)
+            embed.add_field(name="Server", value=self.server_number.value, inline=True)
+            embed.add_field(name="Player ID", value=self.player_id.value, inline=True)
+            embed.add_field(name="Alliance", value=self.alliance.value, inline=True)
+            embed.add_field(name="Rank", value=rank, inline=True)
+            embed.add_field(name="Language", value=self.main_language.value, inline=True)
+            embed.add_field(name="Age Group", value=self.age_group.value, inline=True)
+
+            if review_channel:
+                await review_channel.send(embed=embed)
+            if app_log_channel:
+                await app_log_channel.send(embed=embed)
+
+            # Welcome message after approval
+            welcome_channel_id = CONFIG["channels"].get("welcome_channel") or 0
+            if welcome_channel_id:
+                wc = guild.get_channel(welcome_channel_id)
+                if wc:
+                    await wc.send(
+                        f"Welcome {member.mention}! ✅ Your application has been recorded.\n"
+                        f"Alliance: **{self.alliance.value}**, Rank: **{rank}**, Server: **{self.server_number.value}**."
+                    )
+
+            await interaction.response.send_message(
+                "Thank you! ✅ Your application has been submitted and your roles have been updated.",
+                ephemeral=True,
+            )
+        except Exception as e:
+            await log_to(CONFIG["channels"]["bot_errors"], f"Error in VerificationModal.on_submit: `{e}`")
+            try:
+                await interaction.response.send_message(
+                    "⚠️ Something went wrong while processing your application. Please contact an admin.",
+                    ephemeral=True,
+                )
+            except Exception:
+                pass
+
+
+class VerifyView(discord.ui.View):
+    """Persistent view with a button to open the verification modal."""
+
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="Start Verification ✅",
+        style=discord.ButtonStyle.primary,
+        custom_id="papamike_verify_button"
+    )
+    async def verify_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            await interaction.response.send_modal(VerificationModal())
+        except Exception as e:
+            await log_to(CONFIG["channels"]["bot_errors"], f"Error opening VerificationModal: `{e}`")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "⚠️ Could not open the verification form. Please try again or contact an admin.",
+                    ephemeral=True,
+                )
+
+
 # ------------- EVENTS -------------
 
 @bot.event
@@ -294,11 +480,15 @@ async def on_ready():
     last_seen = load_json(LAST_SEEN_FILE)
     participation = load_json(PARTICIPATION_FILE)
 
+    # Register persistent view for button so old messages still work after restart
+    bot.add_view(VerifyView())
+
     try:
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} application commands.")
     except Exception as e:
         print(f"Error syncing commands: {e}")
+        await log_to(CONFIG["channels"]["bot_errors"], f"Error syncing slash commands: `{e}`")
 
     if not utc_arena_reminder.is_running():
         utc_arena_reminder.start()
@@ -319,21 +509,41 @@ async def on_member_join(member: discord.Member):
         except Exception:
             pass
 
-    # Welcome log
+    # Log join
     await log_to(
         CONFIG["channels"]["join_leave_log"],
         f"➡️ {member.mention} joined the server. Assigned **Pending Verification**."
     )
 
-    # Send welcome in welcome channel if configured
+    # Send auto verification message in verify-here channel
+    verify_channel_id = CONFIG["channels"].get("verify_channel") or 0
+    if verify_channel_id:
+        ch = member.guild.get_channel(verify_channel_id)
+        if ch:
+            try:
+                await ch.send(
+                    content=(
+                        f"Welcome {member.mention}! 👋\n"
+                        "Click the button below to start your verification.\n\n"
+                        "**You must complete this to see the rest of the server.**"
+                    ),
+                    view=VerifyView(),
+                )
+            except Exception as e:
+                await log_to(CONFIG["channels"]["bot_errors"], f"Error sending verify message: `{e}`")
+
+    # Optional welcome channel
     welcome_channel_id = CONFIG["channels"].get("welcome_channel") or 0
     if welcome_channel_id:
-        ch = member.guild.get_channel(welcome_channel_id)
-        if ch:
-            await ch.send(
-                f"Welcome {member.mention}! 🎉\n"
-                f"Please read the rules and start verification using `/verify` to unlock the server."
-            )
+        wc = member.guild.get_channel(welcome_channel_id)
+        if wc:
+            try:
+                await wc.send(
+                    f"Welcome {member.mention}! 🎉\n"
+                    "Please go to the verification channel and click **Start Verification ✅** to unlock the server."
+                )
+            except Exception:
+                pass
 
 
 @bot.event
@@ -384,18 +594,9 @@ async def on_message(message: discord.Message):
                 f"🔥 Congrats {message.author.mention} on reaching **{lvl}**!"
             )
 
-    # Player ID registration
-    # If message is in player-ids channel, we store ID.
-    # You still need to put the channel ID into CONFIG if you want this.
-    # For now, we detect "player id" style digits in ANY message inside Gift Code Center.
-    if message.channel.id == CONFIG["channels"]["giftcode_updates"]:
-        # we want giftcode_updates read-only, so probably not used for player IDs
-        pass
+    # Giftcodes – future expansion (for now handled by commands)
 
-    # Gift codes: when someone posts a code in 🎁｜gift-codes (you must add its ID to config to support auto-detect)
-    # For now, you can add codes using /addcode slash command (below).
-
-    # Auto-translate: global server chat + alliance chats -> English
+    # Auto-translate logs for alliance + global chat
     try:
         important_channels = {CONFIG["channels"]["server_chat"]}
         for data in CONFIG["alliance_channels"].values():
@@ -411,8 +612,8 @@ async def on_message(message: discord.Message):
                         CONFIG["channels"]["translation_log"],
                         f"🌐 {message.author} in <#{message.channel.id}> (lang {lang}) → EN: {translated}"
                     )
-    except Exception:
-        pass
+    except Exception as e:
+        await log_to(CONFIG["channels"]["bot_errors"], f"Error in auto-translate: `{e}`")
 
     await bot.process_commands(message)
 
@@ -472,168 +673,20 @@ async def inactivity_check():
     save_json(LAST_SEEN_FILE, last_seen)
 
 
-# ------------- APPLICATION / VERIFICATION -------------
+# ------------- SLASH COMMANDS (INCLUDING /verify AS BACKUP) -------------
 
-class VerificationModal(discord.ui.Modal, title="PapaMike Server Application"):
-    server_number = discord.ui.TextInput(
-        label="What WOS server are you on?",
-        placeholder="Example: 123",
-        required=True,
-        max_length=10,
-    )
-    player_id = discord.ui.TextInput(
-        label="Your Whiteout Survival Player ID",
-        placeholder="Numbers only",
-        required=True,
-        max_length=30,
-    )
-    alliance = discord.ui.TextInput(
-        label="Alliance (BTK, SUN, vVv, EUA, FUN, WRS, TEA)",
-        placeholder="Type one exactly, e.g. BTK",
-        required=True,
-        max_length=10,
-    )
-    rank = discord.ui.TextInput(
-        label="Rank (R1, R2, R3, R4, R5)",
-        placeholder="R1 / R2 / R3 / R4 / R5",
-        required=True,
-        max_length=5,
-    )
-    main_language = discord.ui.TextInput(
-        label="Main language (English, French, etc.)",
-        placeholder="English / French / Portuguese / ...",
-        required=True,
-        max_length=30,
-    )
-    age_group = discord.ui.TextInput(
-        label="Age group (under 19 or 19+)",
-        placeholder="under 19 or 19+",
-        required=True,
-        max_length=10,
-    )
-
-    async def on_submit(self, interaction: discord.Interaction):
-        member = interaction.user
-        guild = interaction.guild
-
-        # Save player ID
-        pid = self.player_id.value.strip()
-        player_ids[str(member.id)] = pid
-        save_json(PLAYER_IDS_FILE, player_ids)
-
-        # Alliance role
-        alliance_input = self.alliance.value.strip().upper()
-        alliance_key = CONFIG["alliance_name_to_role_key"].get(alliance_input)
-        alliance_role = None
-        if alliance_key:
-            rid = CONFIG["roles"].get(alliance_key)
-            if rid:
-                alliance_role = guild.get_role(rid)
-
-        # Rank (we only log it for now)
-        rank = self.rank.value.strip().upper()
-
-        # Language role
-        lang_input = self.main_language.value.strip().lower()
-        target_role = None
-        language_name_to_id = {
-            "english": 1439732594693509131,
-            "polish": 1439733053550497915,
-            "french": 1439733487195394148,
-            "bosnian": 1439733731534311604,
-            "portuguese (brazil)": 1439734067955499160,
-            "portuguese (portugal)": 1439734590632759336,
-            "persian": 1439734720610177198,
-            "arabic": 1439735048554418227,
-            "german": 1439735171061645507,
-            "russian": 1439737062575181966,
-            "korean": 1439737330263916696,
-            "thai": 1439737843445530644,
-            "turkish": 1439737886348939294,
-            "chinese": 1439737951138353202,
-            "spanish": 1439884540331167775,
-        }
-
-        for name, rid in language_name_to_id.items():
-            if lang_input == name or lang_input.startswith(name.split()[0]):
-                target_role = guild.get_role(rid)
-                break
-
-        # Age roles
-        age_val = self.age_group.value.strip().lower()
-        age_role_id = None
-        if "under" in age_val:
-            age_role_id = CONFIG["roles"]["age_under19"]
-        else:
-            age_role_id = CONFIG["roles"]["age_19plus"]
-        age_role = guild.get_role(age_role_id) if age_role_id else None
-
-        # Apply roles
-        to_add = []
-        if alliance_role:
-            to_add.append(alliance_role)
-        if target_role:
-            to_add.append(target_role)
-        if age_role:
-            to_add.append(age_role)
-
-        if to_add:
-            try:
-                await member.add_roles(*to_add, reason="Verified via application form")
-            except Exception:
-                pass
-
-        # Remove Pending Verification
-        pending_role_id = CONFIG["roles"]["pending"]
-        pending_role = guild.get_role(pending_role_id)
-        if pending_role in member.roles:
-            try:
-                await member.remove_roles(pending_role, reason="Verification complete")
-            except Exception:
-                pass
-
-        # Log application
-        review_channel = guild.get_channel(CONFIG["channels"]["review_inbox"])
-        app_log_channel = guild.get_channel(CONFIG["channels"]["application_log"])
-
-        embed = discord.Embed(
-            title="New Application",
-            color=discord.Color.blurple(),
-            timestamp=datetime.datetime.utcnow(),
-        )
-        embed.add_field(name="User", value=f"{member} ({member.mention})", inline=False)
-        embed.add_field(name="Server", value=self.server_number.value, inline=True)
-        embed.add_field(name="Player ID", value=self.player_id.value, inline=True)
-        embed.add_field(name="Alliance", value=self.alliance.value, inline=True)
-        embed.add_field(name="Rank", value=rank, inline=True)
-        embed.add_field(name="Language", value=self.main_language.value, inline=True)
-        embed.add_field(name="Age Group", value=self.age_group.value, inline=True)
-
-        if review_channel:
-            await review_channel.send(embed=embed)
-        if app_log_channel:
-            await app_log_channel.send(embed=embed)
-
-        # Welcome message
-        welcome_channel_id = CONFIG["channels"].get("welcome_channel") or 0
-        if welcome_channel_id:
-            wc = guild.get_channel(welcome_channel_id)
-            if wc:
-                await wc.send(
-                    f"Welcome {member.mention}! ✅ Your application has been recorded.\n"
-                    f"Alliance: **{self.alliance.value}**, Rank: **{rank}**, Server: **{self.server_number.value}**."
-                )
-
-        await interaction.response.send_message(
-            "Thank you! ✅ Your application has been submitted and your roles have been updated.",
-            ephemeral=True,
-        )
-
-
-@bot.tree.command(name="verify", description="Start the PapaMike verification form.")
+@bot.tree.command(name="verify", description="Open the PapaMike verification form (backup command).")
 async def verify_cmd(interaction: discord.Interaction):
     """User runs /verify to open the application modal."""
-    await interaction.response.send_modal(VerificationModal())
+    try:
+        await interaction.response.send_modal(VerificationModal())
+    except Exception as e:
+        await log_to(CONFIG["channels"]["bot_errors"], f"Error in /verify: `{e}`")
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                "⚠️ Could not open the verification form. Please try again.",
+                ephemeral=True,
+            )
 
 
 # ------------- GIFT CODES -------------
@@ -777,7 +830,8 @@ async def help_cmd(interaction: discord.Interaction):
     desc = (
         "**PapaMike Translator Bot – Help**\n\n"
         "🛂 **Verification & Roles**\n"
-        "- `/verify` – open the application form to unlock the server.\n"
+        "- Click the **Start Verification ✅** button in the verify channel to open the form.\n"
+        "- `/verify` – backup command to open the verification form.\n"
         "- Alliance, language and age roles are auto-assigned from your answers.\n\n"
         "🌐 **Translation**\n"
         "- Auto-logs translations of global and alliance chats into English for leaders.\n"
@@ -795,6 +849,21 @@ async def help_cmd(interaction: discord.Interaction):
         "- Bot tracks participation milestones and kicks inactive users after 30 days."
     )
     await interaction.response.send_message(desc, ephemeral=True)
+
+
+# ------------- GLOBAL ERROR HANDLING -------------
+
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    await log_to(CONFIG["channels"]["bot_errors"], f"Slash command error: `{error}`")
+    if not interaction.response.is_done():
+        try:
+            await interaction.response.send_message(
+                "⚠️ An error occurred while running that command. Please contact an admin.",
+                ephemeral=True,
+            )
+        except Exception:
+            pass
 
 
 # ------------- RUN -------------
